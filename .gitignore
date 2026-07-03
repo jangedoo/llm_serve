@@ -1,5 +1,6 @@
 # Build artifacts
 engines/llama.cpp/build*/
+engines/vllm/
 build*/
 *.o
 *.so
