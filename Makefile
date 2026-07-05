@@ -49,16 +49,18 @@ CPU_FLAGS := $(shell \
   echo $$flags; \
 )
 
-CUDA_CC := $(shell \
+CUDA_ARCHS := $(shell \
   if command -v nvidia-smi &>/dev/null; then \
-    nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.'; \
+    nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | \
+      awk -F. '/^[0-9]+\.[0-9]+$$/ { arch = $$1 $$2; if (arch == "120") arch = "120a"; \
+        if (!seen[arch]++) { printf "%s%s", sep, arch; sep = ";" } }'; \
   fi \
 )
 
 CUDA_FLAGS := $(shell \
   if [ $(CUDA_FOUND) -eq 1 ]; then \
     echo "-DGGML_CUDA=ON"; \
-    [ -n "$(CUDA_CC)" ] && echo "-DCMAKE_CUDA_ARCHITECTURES=$(CUDA_CC)"; \
+    [ -n "$(CUDA_ARCHS)" ] && echo "-DCMAKE_CUDA_ARCHITECTURES=$(CUDA_ARCHS)"; \
   fi \
 )
 
@@ -72,7 +74,7 @@ info: ## Show detected platform info
 	@echo "CPU cores        : $(NCORES)"
 	@echo "CPU flags        : $(CPU_FLAGS)"
 	@echo "CUDA toolkit     : $$([ $(CUDA_FOUND) -eq 1 ] && echo 'found' || echo 'not found')"
-	@echo "CUDA compute cap : $$([ -n '$(CUDA_CC)' ] && echo '$(CUDA_CC)' || echo 'N/A')"
+	@echo "CUDA architectures: $$([ -n '$(CUDA_ARCHS)' ] && echo '$(CUDA_ARCHS)' || echo 'N/A')"
 	@echo ""
 
 # ── llama.cpp init / update ───────────────────────────────────────────────────
@@ -203,7 +205,8 @@ MODEL_ALIAS ?=
 # Aliases for convenience — MODEL=Qwen3.6-35B-A3B expands to full HF ref
 MODEL_QWEN35A3B := unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_M
 MODEL_GEMMA4   := unsloth/gemma-4-E4B-it-GGUF:gemma-4-E4B-it-UD-Q4_K_XL
-MODEL_QWEN27B  := unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q4_K_XL
+MODEL_QWEN27B  := unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-Q4_K_M
+MODEL_QWEN27B_MTP := unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q4_K_XL
 
 llama.server: ## Start llama-server (args: LLAMA_ARGS="...", MODEL=<alias|hf-ref>, PRESET=...)
 	@if [ -n "$(LLAMA_BUILD_DIR)" ]; then \
@@ -223,12 +226,13 @@ llama.server: ## Start llama-server (args: LLAMA_ARGS="...", MODEL=<alias|hf-ref
 	    Qwen3.6-35B-A3B) ref="$(MODEL_QWEN35A3B)" ;; \
 	    gemma-4-E4B-it)  ref="$(MODEL_GEMMA4)" ;; \
 	    Qwen3.6-27B)     ref="$(MODEL_QWEN27B)" ;; \
+	    Qwen3.6-27B-MTP) ref="$(MODEL_QWEN27B_MTP)" ;; \
 	  esac; \
 	  echo "Starting llama-server with model '$$ref' on port 8080..."; \
 	  "$$dir/bin/llama-server" --tools all --hf-repo "$$ref" $(LLAMA_ARGS); \
 	elif [ -f "$(PRESET)" ]; then \
 	  echo "Starting llama-server with preset $(PRESET) on port 8080..."; \
-	  "$$dir/bin/llama-server" --tools all --models-preset "$(PRESET)" $(LLAMA_ARGS); \
+	  "$$dir/bin/llama-server" --tools all --models-preset "$(PRESET)" --models-max 1 $(LLAMA_ARGS); \
 	else \
 	  echo "Starting llama-server on port 8080..."; \
 	  "$$dir/bin/llama-server" --tools all $(LLAMA_ARGS); \
