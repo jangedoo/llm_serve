@@ -319,6 +319,25 @@ vllm.clean: ## Remove all vLLM venvs
 	@rm -rf "$(VLLM_VENVS)"
 	@echo "Cleaned $(VLLM_VENVS)"
 
+# ── Open WebUI ──────────────────────────────────────────────────────────────────
+
+OPENWEBUI_VERSION := v0.9.6
+OPENWEBUI_DATA    := $(PWD)/docker_volumes/openwebui
+OPENWEBUI_CONTAINER := open-webui
+
+openwebui.start: ## Start Open WebUI (uses host network to reach local llama/vllm)
+	@mkdir -p "$(OPENWEBUI_DATA)" && \
+	docker run -d \
+	  --name "$(OPENWEBUI_CONTAINER)" \
+	  --network host \
+	  -v "$(OPENWEBUI_DATA):/app/backend/data" \
+	  "ghcr.io/open-webui/open-webui:$(OPENWEBUI_VERSION)" && \
+	echo "Open WebUI started at http://localhost:8080"
+
+openwebui.stop: ## Stop and remove Open WebUI container
+	@docker rm -f "$(OPENWEBUI_CONTAINER)" 2>/dev/null && \
+	  echo "Open WebUI stopped" || echo "Open WebUI was not running"
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 _llama_fetch: ## Fetch latest tags/refs from upstream
