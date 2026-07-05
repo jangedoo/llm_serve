@@ -57,6 +57,13 @@ CUDA_ARCHS := $(shell \
   fi \
 )
 
+GPU ?= $(shell \
+  nvidia-smi --query-gpu=pci.bus_id,memory.total --format=csv,noheader,nounits 2>/dev/null | \
+    sort -t, -k1,1 | \
+    awk -F, '{ gsub(/ /, "", $$2); if ($$2 + 0 > memory) { memory = $$2 + 0; gpu = NR - 1 } } \
+      END { if (NR) print gpu }' \
+)
+
 CUDA_FLAGS := $(shell \
   if [ $(CUDA_FOUND) -eq 1 ]; then \
     echo "-DGGML_CUDA=ON"; \
@@ -67,7 +74,7 @@ CUDA_FLAGS := $(shell \
 # ── Help ──────────────────────────────────────────────────────────────────────
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z._-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -E '^[a-zA-Z0-9._-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 info: ## Show detected platform info
@@ -277,6 +284,28 @@ vllm.serve: ## Start vLLM server (args: MODEL=<hf-model>, VLLM_ARGS="...", VERSI
 	fi; \
 	echo "Starting vLLM $$(basename "$$venv") with model $(MODEL)..."; \
 	"$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
+
+vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
+	@venv=$$(if [ -n "$(VERSION)" ]; then echo "$(VLLM_VENVS)/$(VERSION)"; \
+	  elif [ -L "$(VLLM_LATEST)" ]; then echo "$(VLLM_LATEST)"; \
+	  else echo ""; fi); \
+	if [ -z "$$venv" ] || [ ! -f "$$venv/bin/vllm" ]; then \
+	  echo "vLLM not found. Run 'make vllm.install' first."; exit 1; \
+	fi; \
+	if [ -z "$(GPU)" ]; then \
+	  echo "No NVIDIA GPU found. Set GPU=N to select one explicitly."; exit 1; \
+	fi; \
+	echo "Starting Gemma 4 E4B with PCI-order GPU $(GPU) on port 8000..."; \
+	CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="$(GPU)" \
+	  "$$venv/bin/vllm" serve "cosmicproc/gemma-4-E4B-it-NVFP4" \
+	    --served-model-name "gemma-4-E4B-it" \
+	    --quantization compressed-tensors \
+	    --kv-cache-dtype fp8 \
+	    --max-model-len 131072 \
+	    --gpu-memory-utilization 0.90 \
+	    --limit-mm-per-prompt '{"image":1,"audio":0}' \
+	    --host 0.0.0.0 \
+	    --port 8000
 
 vllm.list: ## List installed vLLM versions
 	@if [ -d "$(VLLM_VENVS)" ]; then \

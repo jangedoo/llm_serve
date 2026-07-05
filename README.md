@@ -28,6 +28,16 @@ Model files are loaded from Hugging Face's default cache
 (`~/.cache/huggingface/`). Use `-hf user/model` flags or pass `LLAMA_ARGS`
 to override.
 
+## Gemma 4 E4B with vLLM
+
+```bash
+make vllm.install
+make vllm.gemma4
+```
+
+This serves `cosmicproc/gemma-4-E4B-it-NVFP4` as `gemma-4-E4B-it` through an
+OpenAI-compatible API on port 8000.
+
 ## All targets
 
 ```
