@@ -321,18 +321,19 @@ vllm.clean: ## Remove all vLLM venvs
 
 # ── Open WebUI ──────────────────────────────────────────────────────────────────
 
-OPENWEBUI_VERSION := v0.9.6
+OPENWEBUI_VERSION := v0.10.2
 OPENWEBUI_DATA    := $(PWD)/docker_volumes/openwebui
 OPENWEBUI_CONTAINER := open-webui
 
-openwebui.start: ## Start Open WebUI (uses host network to reach local llama/vllm)
+openwebui.start: ## Start Open WebUI on port 8010 (host network, reachable via localhost)
 	@mkdir -p "$(OPENWEBUI_DATA)" && \
 	docker run -d \
 	  --name "$(OPENWEBUI_CONTAINER)" \
 	  --network host \
+	  -e PORT=8010 \
 	  -v "$(OPENWEBUI_DATA):/app/backend/data" \
 	  "ghcr.io/open-webui/open-webui:$(OPENWEBUI_VERSION)" && \
-	echo "Open WebUI started at http://localhost:8080"
+	echo "Open WebUI started at http://localhost:8010"
 
 openwebui.stop: ## Stop and remove Open WebUI container
 	@docker rm -f "$(OPENWEBUI_CONTAINER)" 2>/dev/null && \
