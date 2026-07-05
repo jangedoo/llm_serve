@@ -18,12 +18,6 @@ VLLM_DIR   := engines/vllm
 VLLM_VENVS := $(VLLM_DIR)/venvs
 VLLM_LATEST := $(VLLM_VENVS)/latest
 
-# ── SGLang directories ──────────────────────────────────────────────────────────
-
-SGLANG_DIR   := engines/sglang
-SGLANG_VENVS := $(SGLANG_DIR)/venvs
-SGLANG_LATEST := $(SGLANG_VENVS)/latest
-
 _CUDA_VER := $(shell nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1)
 
 _CUDA_MAP_13  := $(if $(filter 13%,$(_CUDA_VER)),cu130)
@@ -324,70 +318,6 @@ vllm.list: ## List installed vLLM versions
 vllm.clean: ## Remove all vLLM venvs
 	@rm -rf "$(VLLM_VENVS)"
 	@echo "Cleaned $(VLLM_VENVS)"
-
-# ── SGLang ──────────────────────────────────────────────────────────────────────
-
-sglang.install: ## Install latest SGLang release (args: VERSION=x.y.z, CUDA_VARIANT=cu130)
-	@version="$(VERSION)"; cuda_variant="$(or $(CUDA_VARIANT),$(_CUDA_VARIANT))"; \
-	if [ -z "$$version" ]; then \
-	  echo "Fetching latest SGLang version from PyPI..."; \
-	  version=$$(curl -sL --max-time 10 'https://pypi.org/pypi/sglang/json' | \
-	    python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"); \
-	  if [ -z "$$version" ]; then \
-	    echo "Error: could not fetch latest version from PyPI" >&2; exit 1; \
-	  fi; \
-	fi; \
-	venv_dir="$(SGLANG_VENVS)/$$version"; \
-	if [ -d "$$venv_dir" ]; then \
-	  echo "SGLang $$version already installed at $$venv_dir"; \
-	  rm -f "$(SGLANG_LATEST)"; ln -sf "$$version" "$(SGLANG_LATEST)"; \
-	  echo "Symlinked $(SGLANG_LATEST) -> $$version"; \
-	  exit 0; \
-	fi; \
-	echo "=== Installing SGLang $$version (CUDA variant: $$cuda_variant) ==="; \
-	mkdir -p "$$venv_dir"; \
-	uv venv "$$venv_dir" --python 3.12; \
-	if echo "$$cuda_variant" | grep -q '^cu13'; then \
-	  uv pip install --python "$$venv_dir/bin/python" "sglang==$$version"; \
-	else \
-	  uv pip install --python "$$venv_dir/bin/python" "sglang==$$version" sgl-kernel \
-	    --extra-index-url "https://docs.sglang.ai/whl/$$cuda_variant/" \
-	    --index-strategy unsafe-best-match; \
-	fi; \
-	rm -f "$(SGLANG_LATEST)"; ln -sf "$$version" "$(SGLANG_LATEST)"; \
-	echo "Symlinked $(SGLANG_LATEST) -> $$version"; \
-	echo "Done. Run 'make sglang.serve MODEL=...'"
-
-sglang.serve: ## Start SGLang server (args: MODEL=<hf-model>, SGLANG_ARGS="...", VERSION=x.y.z)
-	@venv=$$(if [ -n "$(VERSION)" ]; then echo "$(SGLANG_VENVS)/$(VERSION)"; \
-	  elif [ -L "$(SGLANG_LATEST)" ]; then echo "$(SGLANG_LATEST)"; \
-	  else echo ""; fi); \
-	if [ -z "$$venv" ] || [ ! -f "$$venv/bin/python" ]; then \
-	  echo "SGLang not found. Run 'make sglang.install' first."; exit 1; \
-	fi; \
-	if [ -z "$(MODEL)" ]; then \
-	  echo "MODEL is required. Usage: make sglang.serve MODEL=Qwen/Qwen2.5-7B-Instruct"; exit 1; \
-	fi; \
-	echo "Starting SGLang $$(basename "$$venv") with model $(MODEL)..."; \
-	"$$venv/bin/python" -m sglang.launch_server --model-path "$(MODEL)" $(SGLANG_ARGS)
-
-sglang.list: ## List installed SGLang versions
-	@if [ -d "$(SGLANG_VENVS)" ]; then \
-	  for d in "$(SGLANG_VENVS)"/*/; do \
-	    v=$$(basename "$$d"); \
-	    if [ "$$v" != "latest" ]; then \
-	      extra=""; \
-	      [ -L "$(SGLANG_LATEST)" ] && [ "$$(readlink "$(SGLANG_LATEST)")" = "$$v" ] && extra=" <-- latest"; \
-	      echo "  $$v$$extra"; \
-	    fi; \
-	  done; \
-	else \
-	  echo "  No versions installed"; \
-	fi
-
-sglang.clean: ## Remove all SGLang venvs
-	@rm -rf "$(SGLANG_VENVS)"
-	@echo "Cleaned $(SGLANG_VENVS)"
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
