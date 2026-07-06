@@ -66,3 +66,9 @@ CUDA toolkit availability at build time — no per-machine configuration needed.
 Add a new section to the Makefile following the `engine.action` naming
 convention (e.g. `vllm.build`, `sglang.init`). The `help` target picks up
 any target annotated with `##`.
+
+# Benchmark
+
+```
+uvx llama-benchy --base-url http://localhost:8080/v1 --model unsloth/gemma-4-E4B-it-GGUF --served-model-name gemma-4-E4B-it --tokenizer google/gemma-4-12B-it --concurrency 1 2 5 --pp 2048 --tg 512 --depth 0 4096 8192 16384
+```
