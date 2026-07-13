@@ -18,6 +18,8 @@ VLLM_DIR   := engines/vllm
 VLLM_VENVS := $(VLLM_DIR)/venvs
 VLLM_LATEST := $(VLLM_VENVS)/latest
 
+unexport VLLM_ARGS
+
 _CUDA_VER := $(shell nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1)
 
 _CUDA_MAP_13  := $(if $(filter 13%,$(_CUDA_VER)),cu130)
@@ -31,6 +33,7 @@ _CUDA_VARIANT := $(or $(_CUDA_MAP_13),$(_CUDA_MAP_129),$(_CUDA_MAP_128),$(_CUDA_
 # ── Platform detection ────────────────────────────────────────────────────────
 
 CUDA_FOUND := $(shell which nvcc >/dev/null 2>&1 && echo 1 || echo 0)
+FFMPEG_LIB := $(shell prefix=$$(brew --prefix ffmpeg 2>/dev/null) && [ -d "$$prefix/lib" ] && printf '%s/lib' "$$prefix")
 
 CPU_FLAGS := $(shell \
   flags=""; \
@@ -61,7 +64,7 @@ GPU ?= $(shell \
 CUDA_FLAGS := $(shell \
   if [ $(CUDA_FOUND) -eq 1 ]; then \
     echo "-DGGML_CUDA=ON"; \
-    [ -n "$(CUDA_ARCHS)" ] && echo "-DCMAKE_CUDA_ARCHITECTURES=$(CUDA_ARCHS)"; \
+    [ -n "$(CUDA_ARCHS)" ] && echo "-DCMAKE_CUDA_ARCHITECTURES=$(subst ;,\;,$(CUDA_ARCHS))"; \
   fi \
 )
 
@@ -276,30 +279,23 @@ vllm.serve: ## Start vLLM server (args: MODEL=<hf-model>, VLLM_ARGS="...", VERSI
 	if [ -z "$(MODEL)" ]; then \
 	  echo "MODEL is required. Usage: make vllm.serve MODEL=Qwen/Qwen2.5-7B-Instruct"; exit 1; \
 	fi; \
+	library_path="$${LD_LIBRARY_PATH:-}"; \
+	if [ -n "$(FFMPEG_LIB)" ]; then \
+	  library_path="$(FFMPEG_LIB)$${library_path:+:$$library_path}"; \
+	fi; \
 	echo "Starting vLLM $$(basename "$$venv") with model $(MODEL)..."; \
-	"$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
+	LD_LIBRARY_PATH="$$library_path" "$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
 
 vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
-	@venv=$$(if [ -n "$(VERSION)" ]; then echo "$(VLLM_VENVS)/$(VERSION)"; \
-	  elif [ -L "$(VLLM_LATEST)" ]; then echo "$(VLLM_LATEST)"; \
-	  else echo ""; fi); \
-	if [ -z "$$venv" ] || [ ! -f "$$venv/bin/vllm" ]; then \
-	  echo "vLLM not found. Run 'make vllm.install' first."; exit 1; \
-	fi; \
-	if [ -z "$(GPU)" ]; then \
+	@if [ -z "$(GPU)" ]; then \
 	  echo "No NVIDIA GPU found. Set GPU=N to select one explicitly."; exit 1; \
 	fi; \
-	echo "Starting Gemma 4 E4B with PCI-order GPU $(GPU) on port 8000..."; \
+	echo "Starting Gemma 4 E4B with PCI-order GPU $(GPU) on port 8012..."; \
 	CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="$(GPU)" \
-	  "$$venv/bin/vllm" serve "cosmicproc/gemma-4-E4B-it-NVFP4" \
-	    --served-model-name "gemma-4-E4B-it" \
-	    --quantization compressed-tensors \
-	    --kv-cache-dtype fp8 \
-	    --max-model-len 131072 \
-	    --gpu-memory-utilization 0.90 \
-	    --limit-mm-per-prompt '{"image":1,"audio":0}' \
-	    --host 0.0.0.0 \
-	    --port 8000
+	  $(MAKE) vllm.serve \
+	    MODEL="cosmicproc/gemma-4-E4B-it-NVFP4" \
+	    VERSION="$(VERSION)" \
+	    VLLM_ARGS="--served-model-name gemma-4-E4B-it --quantization compressed-tensors --kv-cache-dtype fp8 --max-model-len 131072 --gpu-memory-utilization 0.90 --limit-mm-per-prompt '{\"image\":1,\"audio\":0}' --host 0.0.0.0 --port 8012"
 
 vllm.list: ## List installed vLLM versions
 	@if [ -d "$(VLLM_VENVS)" ]; then \
@@ -338,6 +334,34 @@ openwebui.start: ## Start Open WebUI on port 8010 (host network, reachable via l
 openwebui.stop: ## Stop and remove Open WebUI container
 	@docker rm -f "$(OPENWEBUI_CONTAINER)" 2>/dev/null && \
 	  echo "Open WebUI stopped" || echo "Open WebUI was not running"
+
+# ── Hermes Agent ───────────────────────────────────────────────────────────────
+
+HERMES_VERSION  := v2026.7.1
+HERMES_DATA     := $(PWD)/docker_volumes/hermes
+HERMES_CONTAINER := hermes
+
+hermes.setup: ## Run Hermes setup wizard (interactive, one-time)
+	@mkdir -p "$(HERMES_DATA)" && \
+	docker run -it --rm \
+	  -v "$(HERMES_DATA):/opt/data" \
+	  "nousresearch/hermes-agent:$(HERMES_VERSION)" setup
+
+hermes.start: ## Start Hermes gateway on port 8011 (host network)
+	@mkdir -p "$(HERMES_DATA)" && \
+	docker run -d \
+	  --name "$(HERMES_CONTAINER)" \
+	  --network host \
+	  -e HERMES_DASHBOARD_PORT=8011 \
+	  -e HERMES_DASHBOARD_HOST=127.0.0.1 \
+	  -e HERMES_DASHBOARD=1 \
+	  -v "$(HERMES_DATA):/opt/data" \
+	  "nousresearch/hermes-agent:$(HERMES_VERSION)" gateway run && \
+	echo "Hermes started at http://localhost:8011"
+
+hermes.stop: ## Stop and remove Hermes container
+	@docker rm -f "$(HERMES_CONTAINER)" 2>/dev/null && \
+	  echo "Hermes stopped" || echo "Hermes was not running"
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
