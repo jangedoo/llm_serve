@@ -284,7 +284,8 @@ vllm.serve: ## Start vLLM server (args: MODEL=<hf-model>, VLLM_ARGS="...", VERSI
 	  library_path="$(FFMPEG_LIB)$${library_path:+:$$library_path}"; \
 	fi; \
 	echo "Starting vLLM $$(basename "$$venv") with model $(MODEL)..."; \
-	LD_LIBRARY_PATH="$$library_path" "$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
+	MAX_JOBS=2 TORCHINDUCTOR_COMPILE_THREADS=2 LD_LIBRARY_PATH="$$library_path" \
+	  "$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
 
 vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
 	@if [ -z "$(GPU)" ]; then \
@@ -295,7 +296,28 @@ vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION
 	  $(MAKE) vllm.serve \
 	    MODEL="cosmicproc/gemma-4-E4B-it-NVFP4" \
 	    VERSION="$(VERSION)" \
-	    VLLM_ARGS="--served-model-name gemma-4-E4B-it --quantization compressed-tensors --kv-cache-dtype fp8 --max-model-len 131072 --gpu-memory-utilization 0.90 --limit-mm-per-prompt '{\"image\":1,\"audio\":0}' --host 0.0.0.0 --port 8012"
+	    VLLM_ARGS="--served-model-name gemma-4-E4B-it --kv-cache-dtype fp8 --gpu-memory-utilization 0.9 --enable-auto-tool-choice --tool-call-parser gemma4 --load-format fastsafetensors  --limit-mm-per-prompt '{\"image\":1,\"audio\":0}' --host 0.0.0.0 --port 8012"
+	    
+vllm.gemma4.26B: ## Serve Gemma 4 26B A4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
+	@if [ -z "$(GPU)" ]; then \
+	  echo "No NVIDIA GPU found. Set GPU=N to select one explicitly."; exit 1; \
+	fi; \
+	echo "Starting Gemma 4 26B A4B with PCI-order GPU $(GPU) on port 8012..."; \
+	CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="$(GPU)" \
+	  $(MAKE) vllm.serve \
+	    MODEL="nvidia/Gemma-4-26B-A4B-NVFP4" \
+	    VERSION="$(VERSION)" \
+	    VLLM_ARGS="--served-model-name gemma-4-26B-A4B-it \
+	      --kv-cache-dtype fp8 \
+	      --gpu-memory-utilization 0.95 \
+	      --enable-auto-tool-choice \
+	      --tool-call-parser gemma4 \
+	      --reasoning-parser gemma4 \
+	      --trust-remote-code \
+	      --max-model-len 32000 \
+	      --limit-mm-per-prompt '{\"image\":0,\"audio\":0}' \
+	      --host 0.0.0.0 \
+	      --port 8012"
 
 vllm.list: ## List installed vLLM versions
 	@if [ -d "$(VLLM_VENVS)" ]; then \
