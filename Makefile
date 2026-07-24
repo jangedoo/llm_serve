@@ -285,7 +285,7 @@ vllm.serve: ## Start vLLM server (args: MODEL=<hf-model>, VLLM_ARGS="...", VERSI
 	fi; \
 	echo "Starting vLLM $$(basename "$$venv") with model $(MODEL)..."; \
 	MAX_JOBS=2 TORCHINDUCTOR_COMPILE_THREADS=2 LD_LIBRARY_PATH="$$library_path" \
-	  "$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS)
+	  "$$venv/bin/vllm" serve "$(MODEL)" $(VLLM_ARGS) --enable-per-request-metrics
 
 vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
 	@if [ -z "$(GPU)" ]; then \
@@ -296,7 +296,15 @@ vllm.gemma4: ## Serve Gemma 4 E4B NVFP4 on the largest GPU (args: GPU=N, VERSION
 	  $(MAKE) vllm.serve \
 	    MODEL="cosmicproc/gemma-4-E4B-it-NVFP4" \
 	    VERSION="$(VERSION)" \
-	    VLLM_ARGS="--served-model-name gemma-4-E4B-it --kv-cache-dtype fp8 --gpu-memory-utilization 0.9 --enable-auto-tool-choice --tool-call-parser gemma4 --load-format fastsafetensors  --limit-mm-per-prompt '{\"image\":1,\"audio\":0}' --host 0.0.0.0 --port 8012"
+	    VLLM_ARGS="--served-model-name gemma-4-E4B-it \
+	      --kv-cache-dtype fp8 \
+	      --gpu-memory-utilization 0.5 \
+	      --enable-auto-tool-choice \
+	      --tool-call-parser gemma4 \
+	      --reasoning-parser gemma4 \
+	      --limit-mm-per-prompt '{\"image\":0,\"audio\":0}' \
+	      --host 0.0.0.0 \
+	      --port 8012"
 	    
 vllm.gemma4.26B: ## Serve Gemma 4 26B A4B NVFP4 on the largest GPU (args: GPU=N, VERSION=x.y.z)
 	@if [ -z "$(GPU)" ]; then \
